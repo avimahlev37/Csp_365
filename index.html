@@ -154,10 +154,48 @@ function loadQuoteData(d){document.getElementById('customerName').value=d.custom
 async function saveQuoteData(){try{const d=getQuoteData();const fileName=`${d.customerName||'customer'}-${d.quoteNumber||'quote'}-data.json`.replace(/[\\/:*?"<>|]/g,'-');setStatus('מכין קובץ Data לשמירה...',true);downloadFile(fileName,JSON.stringify(d,null,2),'application/json');setStatus('קובץ Data נשמר / נשלח להורדה',true);}catch(err){console.error(err);alert('שמירת קובץ Data נכשלה');setStatus('שמירת קובץ Data נכשלה',false);}}
 function handleQuoteDataFile(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{loadQuoteData(JSON.parse(r.result));setStatus(`נפתח קובץ Data: ${f.name}`,true);}catch(err){console.error(err);alert('קובץ Data לא תקין');}};r.readAsText(f);}
 function handlePriceFile(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=async()=>{try{if(f.name.toLowerCase().endsWith('.csv')){const parsed=Papa.parse(r.result,{header:true,skipEmptyLines:true});if(parsed.errors&&parsed.errors.length)console.warn('CSV parse warnings:',parsed.errors);priceList=normalizePriceListRows(parsed.data);}else{const wb=XLSX.read(new Uint8Array(r.result),{type:'array'});priceList=normalizePriceListRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''}));}updateSegmentOptions();updateProductOptions();await saveStoredPriceList(f.name);document.querySelectorAll('.sheetBody tr').forEach(row=>{const p=row.querySelector('.product');if(p&&p.value.trim())handleRowChange(row,p);});}catch(err){console.error(err);alert('לא הצלחתי לקרוא או לשמור את קובץ המחירון');setStatus('טעינת המחירון נכשלה',false);}};f.name.toLowerCase().endsWith('.csv')?r.readAsText(f):r.readAsArrayBuffer(f);}
-function collectCustomerRows(scopeBlock=null){const blocks=scopeBlock?[scopeBlock]:[...document.querySelectorAll('.quote-block')].filter(b=>b.querySelector('.quoteInclude')?.checked);const rows=[];blocks.forEach(block=>{[...block.querySelectorAll('.sheetBody tr')].forEach(row=>{const product=row.querySelector('.product')?.value||'';if(!product.trim())return;rows.push({product,qty:row.querySelector('.qty')?.value||'0',cost:row.querySelector('.cost')?.value||'0',sell:row.querySelector('.sell')?.value||'0',total:row.querySelector('.lineTotal')?.value||'0'});});});return rows;}
-function buildCustomerCopyText(rows){const htmlRows=rows.map(r=>`<tr><td style="padding-right:10px;text-align:right;direction:ltr">${escapeHtml(r.product)}</td><td style="text-align:center">${escapeHtml(r.qty)}</td>${copyCurrencyCell(r.sell)}${copyCurrencyCell(r.total)}</tr>`).join('');const html=`<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;direction:rtl;min-width:700px"><thead><tr style="background:#5b9bd5;color:white;font-weight:bold;text-align:center"><th style="min-width:320px">שם הרישוי</th><th>כמות</th><th>עלות יח&apos;</th><th>סה&quot;כ עלות</th></tr></thead><tbody>${htmlRows}</tbody></table>`;const header=['שם הרישוי','כמות',"עלות יח'",'סה"כ עלות'].join(TAB);const body=rows.map(r=>[r.product,r.qty,r.sell,r.total].join(TAB)).join(NL);const text=body?header+NL+body:header;return{html,text};}
+function collectCustomerRows(scopeBlock=null){const blocks=scopeBlock?[scopeBlock]:[...document.querySelectorAll('.quote-block')].filter(b=>b.querySelector('.quoteInclude')?.checked);const rows=[];blocks.forEach(block=>{[...block.querySelectorAll('.sheetBody tr')].forEach(row=>{const product=row.querySelector('.product')?.value||'';if(!product.trim())return;rows.push({product,qty:row.querySelector('.qty')?.value||'0',cost:row.querySelector('.cost')?.value||'0',sell:row.querySelector('.sell')?.value||'0',total:row.querySelector('.lineTotal')?.value||'0',commitmentText:row.querySelector('.commitment')?.selectedOptions?.[0]?.text||'',paymentText:row.querySelector('.payment')?.selectedOptions?.[0]?.text||''});});});return rows;}
+function buildCustomerCopyText(rows){
+const groups={};
+rows.forEach(r=>{
+const key=(r.commitmentText||'')+'|'+(r.paymentText||'');
+(groups[key] ||= []).push(r);
+});
+let html='';
+let text='';
+Object.entries(groups).forEach(([key,items])=>{
+const first=items[0];
+const title=`מודל התחייבות: ${first.commitmentText} בתשלום ${first.paymentText}`;
+html+=`<div style="font-weight:bold;margin:8px 0">${title}</div>`;
+const htmlRows=items.map(r=>`<tr><td style="padding-right:10px;text-align:right;direction:ltr">${escapeHtml(r.product)}</td><td style="text-align:center">${escapeHtml(r.qty)}</td>${copyCurrencyCell(r.sell)}${copyCurrencyCell(r.total)}</tr>`).join('');
+html+=`<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;direction:rtl;min-width:700px"><thead><tr style="background:#5b9bd5;color:white;font-weight:bold;text-align:center"><th style="min-width:320px">שם הרישוי</th><th>כמות</th><th>עלות יח'</th><th>סה"כ עלות</th></tr></thead><tbody>${htmlRows}</tbody></table><br>`;
+text+=title+NL;
+text+=['שם הרישוי','כמות',"עלות יח'",'סה"כ עלות'].join(TAB)+NL;
+text+=items.map(r=>[r.product,r.qty,r.sell,r.total].join(TAB)).join(NL)+NL+NL;
+});
+return{html,text};
+}
 async function copyCustomerTable(scopeBlock=null){const data=buildCustomerCopyText(collectCustomerRows(scopeBlock));copyHtmlToClipboard(data.html,data.text,'טבלת הלקוח הועתקה ללוח');}
-function buildInternalCopyText(rows){const htmlRows=rows.map(r=>`<tr><td style="padding-right:10px;text-align:right;direction:ltr">${escapeHtml(r.product)}</td><td style="text-align:center">${escapeHtml(r.qty)}</td>${copyCurrencyCell(r.cost)}${copyCurrencyCell(r.sell)}</tr>`).join('');const html=`<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;direction:rtl;min-width:700px"><thead><tr style="background:#5b9bd5;color:white;font-weight:bold;text-align:center"><th style="min-width:320px">שם הרישוי</th><th>כמות</th><th>עלות</th><th>מחיר מכירה</th></tr></thead><tbody>${htmlRows}</tbody></table>`;const header=['שם הרישוי','כמות','עלות','מחיר מכירה'].join(TAB);const body=rows.map(r=>[r.product,r.qty,r.cost,r.sell].join(TAB)).join(NL);const text=body?header+NL+body:header;return{html,text};}
+function buildInternalCopyText(rows){
+const groups={};
+rows.forEach(r=>{
+const key=(r.commitmentText||'')+'|'+(r.paymentText||'');
+(groups[key] ||= []).push(r);
+});
+let html='';
+let text='';
+Object.entries(groups).forEach(([key,items])=>{
+const first=items[0];
+const title=`מודל התחייבות: ${first.commitmentText} בתשלום ${first.paymentText}`;
+html+=`<div style="font-weight:bold;margin:8px 0">${title}</div>`;
+const htmlRows=items.map(r=>`<tr><td style="padding-right:10px;text-align:right;direction:ltr">${escapeHtml(r.product)}</td><td style="text-align:center">${escapeHtml(r.qty)}</td>${copyCurrencyCell(r.cost)}${copyCurrencyCell(r.sell)}</tr>`).join('');
+html+=`<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;direction:rtl;min-width:700px"><thead><tr style="background:#5b9bd5;color:white;font-weight:bold;text-align:center"><th style="min-width:320px">שם הרישוי</th><th>כמות</th><th>עלות</th><th>מחיר מכירה</th></tr></thead><tbody>${htmlRows}</tbody></table><br>`;
+text+=title+NL;
+text+=['שם הרישוי','כמות','עלות','מחיר מכירה'].join(TAB)+NL;
+text+=items.map(r=>[r.product,r.qty,r.cost,r.sell].join(TAB)).join(NL)+NL+NL;
+});
+return{html,text};
+}
 async function copyInternalTable(scopeBlock=null){const data=buildInternalCopyText(collectCustomerRows(scopeBlock));copyHtmlToClipboard(data.html,data.text,'טבלה פנימית הועתקה ללוח');}
 function copyHtmlToClipboard(html,text,msg){try{const container=document.createElement('div');container.innerHTML=html;container.style.position='fixed';container.style.left='-9999px';document.body.appendChild(container);const range=document.createRange();range.selectNode(container);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);const success=document.execCommand('copy');selection.removeAllRanges();document.body.removeChild(container);if(success){alert(msg);return;}}catch(err){console.warn(err);}fallbackCopyText(text);}
 function fallbackCopyText(text){const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('הטבלה הועתקה ללוח');}
